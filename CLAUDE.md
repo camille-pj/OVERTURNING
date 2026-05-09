@@ -13,9 +13,11 @@ launching nose (right of pin) try to tip it over.
 - [girder_overturning_ui.py](girder_overturning_ui.py) — Tkinter desktop UI.
   Self-contained (no Excel). All input fields are pre-populated with defaults
   derived from the workbook example in the README; edit & click Calculate.
-  Two embedded matplotlib figures: free-body schematic (beam, pin, scaled
-  load arrows, lever-arm dimensions) and a moments bar chart with the
-  required-capacity threshold. Theme is Sun Valley (Win 11 fluent) when
+  Two embedded matplotlib figures: free-body schematic (beam, pivot wedge,
+  scaled load arrows, lever-arm dimensions, cross-section panel) and a
+  moments bar chart with the required-capacity threshold. Variables are
+  rendered as mathtext throughout (form labels, formulas card, figure
+  annotations). Theme is Sun Valley (Win 11 fluent) when
   `sv_ttk` is installed, else `clam`.
 
   Deps: `pip install matplotlib sv_ttk` — `matplotlib` is required for the

@@ -107,6 +107,30 @@ FORMULAS = [
     r"$\mathrm{deficit} = M_\mathrm{over}\cdot\mathrm{SF}_\mathrm{req} - M_\mathrm{stab}$",
 ]
 
+# Girder cross-section polygon (m). Closed implicitly: last vertex links
+# back to the first. User-supplied; treated as canonical geometry of the
+# girder under analysis.
+CROSS_SECTION = [
+    (0.3125, 0.0000), (1.0375, 0.0000),
+    (1.0375, 0.2000), (0.8000, 0.4000),
+    (0.8000, 1.7000), (0.8750, 1.8500),
+    (1.3500, 1.8500), (1.3500, 2.0000),
+    (0.0000, 2.0000), (0.0000, 1.8500),
+    (0.4750, 1.8500), (0.5500, 1.7000),
+    (0.5500, 0.4000), (0.3125, 0.2000),
+]
+
+
+def polygon_area(verts):
+    """Shoelace area of a closed polygon (vertices in any winding order)."""
+    n = len(verts)
+    s = 0.0
+    for i in range(n):
+        x1, y1 = verts[i]
+        x2, y2 = verts[(i + 1) % n]
+        s += x1 * y2 - x2 * y1
+    return abs(s) / 2.0
+
 # Palette
 C_BG       = "#fafafa"
 C_BEAM     = "#374151"
@@ -173,16 +197,13 @@ def draw_schematic(ax, L_left, r):
         ax.plot([right_end, arm_LN], [0, 0],
                 lw=2, color=C_DIM, linestyle=(0, (4, 3)), zorder=1)
 
-    # Pin support — triangle + hatched ground
+    # Pivot — wedge / fulcrum, apex at the pivot point. No hatched ground:
+    # the girder pivots about a launching saddle, not a fixed pin support.
     ph = 0.55
-    ax.fill([pin - 0.55, pin + 0.55, pin], [-ph, -ph, 0],
+    ax.fill([pin, pin - 0.55, pin + 0.55], [0, -ph, -ph],
             color=C_PIN, zorder=3)
-    ax.plot([pin - 1.4, pin + 1.4], [-ph, -ph], lw=1.4, color=C_PIN)
-    for x in [-1.1, -0.7, -0.3, 0.1, 0.5, 0.9]:
-        ax.plot([pin + x, pin + x - 0.22], [-ph, -ph - 0.22],
-                lw=1, color=C_PIN)
-    ax.text(pin, -ph - 0.55, "pin", ha="center", va="top",
-            fontsize=9, color=C_PIN, fontweight="bold")
+    ax.text(pin, -ph - 0.18, "pivot", ha="center", va="top",
+            fontsize=10, color=C_PIN, fontweight="bold")
 
     # Load arrows — length proportional to magnitude
     max_w = max(W_left, W_right, W_LN, 1.0)
@@ -217,8 +238,50 @@ def draw_schematic(ax, L_left, r):
     ax.set_ylim(-3.2, arr_max + 1.4)
     ax.set_aspect("auto")
     ax.axis("off")
-    ax.set_title("Free-body diagram  ·  loads & moment arms about pin",
+    ax.set_title("Free-body diagram  ·  loads & moment arms about pivot",
                  fontsize=10.5, color=C_TXT, pad=10)
+
+
+def draw_cross_section(ax, verts):
+    """Filled outline of the girder cross-section, with computed area."""
+    ax.clear()
+    ax.set_facecolor(C_BG)
+
+    xs = [v[0] for v in verts]
+    ys = [v[1] for v in verts]
+
+    ax.fill(xs, ys, color="#cbd5e1", edgecolor="#334155",
+            lw=1.4, zorder=2)
+
+    A  = polygon_area(verts)
+    w  = max(xs) - min(xs)
+    h  = max(ys) - min(ys)
+
+    pad = 0.15
+    ax.set_xlim(min(xs) - pad, max(xs) + pad)
+    ax.set_ylim(min(ys) - 0.35, max(ys) + 0.20)
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    # Width & depth dim arrows
+    y_dim = min(ys) - 0.20
+    ax.annotate("", xy=(max(xs), y_dim), xytext=(min(xs), y_dim),
+                arrowprops=dict(arrowstyle="<->", color=C_DIM, lw=1.0))
+    ax.text((min(xs) + max(xs)) / 2, y_dim - 0.05,
+            f"{w:.2f} m", ha="center", va="top",
+            fontsize=8, color=C_TXT)
+
+    x_dim = max(xs) + 0.10
+    ax.annotate("", xy=(x_dim, max(ys)), xytext=(x_dim, min(ys)),
+                arrowprops=dict(arrowstyle="<->", color=C_DIM, lw=1.0))
+    ax.text(x_dim + 0.04, (min(ys) + max(ys)) / 2,
+            f"{h:.2f} m", ha="left", va="center",
+            fontsize=8, color=C_TXT, rotation=90)
+
+    ax.set_title(
+        f"Cross-section\n$A$ = {A:.3f} m²",
+        fontsize=10, color=C_TXT, pad=6,
+    )
 
 
 def draw_moments(ax, r):
@@ -443,11 +506,13 @@ class App(tk.Tk):
         right.rowconfigure(1, weight=5)
         right.columnconfigure(0, weight=1)
 
-        # Schematic
-        self.fig_schem = Figure(figsize=(7.4, 3.4), dpi=100, facecolor=C_BG)
-        self.ax_schem  = self.fig_schem.add_subplot(111)
-        self.fig_schem.subplots_adjust(left=0.03, right=0.99,
-                                       top=0.92, bottom=0.05)
+        # Schematic + cross-section side-by-side in one figure
+        self.fig_schem = Figure(figsize=(8.4, 3.6), dpi=100, facecolor=C_BG)
+        gs = self.fig_schem.add_gridspec(1, 6, wspace=0.05)
+        self.ax_schem = self.fig_schem.add_subplot(gs[0, :5])
+        self.ax_cs    = self.fig_schem.add_subplot(gs[0, 5])
+        self.fig_schem.subplots_adjust(left=0.02, right=0.98,
+                                       top=0.90, bottom=0.06)
         self.canvas_schem = FigureCanvasTkAgg(self.fig_schem, master=right)
         self.canvas_schem.get_tk_widget().grid(row=0, column=0, sticky="nsew",
                                                pady=(0, 8))
@@ -496,6 +561,7 @@ class App(tk.Tk):
         self._render_text(vals["L_left"], r)
 
         draw_schematic(self.ax_schem, vals["L_left"], r)
+        draw_cross_section(self.ax_cs, CROSS_SECTION)
         draw_moments(self.ax_bars, r)
         self.canvas_schem.draw_idle()
         self.canvas_bars.draw_idle()
