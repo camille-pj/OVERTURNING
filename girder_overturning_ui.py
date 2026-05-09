@@ -143,6 +143,39 @@ def polygon_area(verts):
         s += x1 * y2 - x2 * y1
     return abs(s) / 2.0
 
+
+def sf_crossing(SF_target, w_per_m, W_LN, arm_LN_from_end, L_total):
+    """Solve for the L_right at which SF = M_stab / M_over hits the
+    given target value. Substituting M_stab and M_over gives a quadratic
+    in L_right:
+
+        a*x^2 + b*x + c = 0
+        a = (SF - 1) * w / 2
+        b =  SF * W_LN + w * L_total
+        c =  SF * W_LN * arm_LN_from_end - w * L_total^2 / 2
+
+    For SF_target = 1 the quadratic degenerates to a linear (a = 0).
+    Returns the root in (0, L_total) or None if no such root exists."""
+    import math
+    a = (SF_target - 1.0) * w_per_m / 2.0
+    b = SF_target * W_LN + w_per_m * L_total
+    c = SF_target * W_LN * arm_LN_from_end - w_per_m * L_total ** 2 / 2.0
+
+    if abs(a) < 1e-9:
+        if abs(b) < 1e-9:
+            return None
+        x = -c / b
+        return x if 0.0 < x < L_total else None
+
+    disc = b * b - 4.0 * a * c
+    if disc < 0:
+        return None
+    sq = math.sqrt(disc)
+    for x in ((-b + sq) / (2.0 * a), (-b - sq) / (2.0 * a)):
+        if 0.0 < x < L_total:
+            return x
+    return None
+
 # Palette
 C_BG       = "#fafafa"
 C_BEAM     = "#374151"
@@ -478,6 +511,31 @@ def draw_overhang_curves(fig, p, r):
                        xy=(cur_L_right, r["SF"]),
                        xytext=(8, offset_y), textcoords="offset points",
                        fontsize=9, color=C_SF, fontweight="bold",
+                       bbox=dict(facecolor=C_BG, edgecolor="none", pad=1.5))
+
+    # Intersections of the SF curve with the required and tipping lines —
+    # the launch positions at which the system just barely meets SF_req
+    # (no counterweight needed beyond it) and at which the system is on
+    # the verge of tipping (SF = 1).
+    L_at_req = sf_crossing(SF_req, w_per_m, W_LN, arm_LN_from_end, L_total)
+    L_at_tip = sf_crossing(1.0,    w_per_m, W_LN, arm_LN_from_end, L_total)
+
+    if L_at_req is not None:
+        ax_sf.scatter([L_at_req], [SF_req], color=C_REQ, s=46, zorder=6,
+                      edgecolor="white", linewidth=1.0)
+        ax_sf.annotate(fr"$L_\mathrm{{right}}$ = {L_at_req:.2f} m",
+                       xy=(L_at_req, SF_req),
+                       xytext=(-10, 12), textcoords="offset points",
+                       ha="right", fontsize=9, color=C_REQ, fontweight="bold",
+                       bbox=dict(facecolor=C_BG, edgecolor="none", pad=1.5))
+
+    if L_at_tip is not None:
+        ax_sf.scatter([L_at_tip], [1.0], color=C_OVER, s=46, zorder=6,
+                      edgecolor="white", linewidth=1.0)
+        ax_sf.annotate(fr"$L_\mathrm{{right}}$ = {L_at_tip:.2f} m",
+                       xy=(L_at_tip, 1.0),
+                       xytext=(10, -14), textcoords="offset points",
+                       ha="left", fontsize=9, color=C_OVER, fontweight="bold",
                        bbox=dict(facecolor=C_BG, edgecolor="none", pad=1.5))
 
     ax_sf.set_xlabel(r"Right overhang  $L_\mathrm{right}$  (m)",
