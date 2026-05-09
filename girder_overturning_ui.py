@@ -157,11 +157,21 @@ def compute(L_left, L_total, w_per_m, W_LN, arm_LN_from_end, SF_required):
     SF      = M_stab / M_over if M_over else float("inf")
     deficit = M_over * SF_required - M_stab
 
+    # Required counterweight to bring SF up to SF_required, for two
+    # placements: at the middle of the back span (arm = L_left / 2) and
+    # at the far rear end of the back span (arm = L_left). When the
+    # system already passes (deficit <= 0) no counterweight is needed.
+    deficit_pos = max(deficit, 0.0)
+    W_cw_mid = deficit_pos / arm_left if arm_left > 0 else 0.0
+    W_cw_end = deficit_pos / L_left   if L_left   > 0 else 0.0
+
     return dict(
-        L_right=L_right, W_left=W_left, W_right=W_right, W_LN=W_LN,
+        L_left=L_left, L_right=L_right,
+        W_left=W_left, W_right=W_right, W_LN=W_LN,
         arm_left=arm_left, arm_right=arm_right, arm_LN=arm_LN,
         M_stab=M_stab, M_over=M_over,
         SF=SF, SF_required=SF_required, deficit=deficit,
+        W_cw_mid=W_cw_mid, W_cw_end=W_cw_end,
     )
 
 
@@ -317,6 +327,10 @@ def draw_result(fig, L_left, r, bg_color):
         (r"$M_\mathrm{over}$",  fr"${fn(r['M_over'])}{knm}$"),
         None,
         (r"$\mathrm{deficit}$", fr"${fn(abs(r['deficit']))}{knm}$   ({deficit_label})"),
+        None,
+        ("HEAD", "Required counterweight"),
+        (r"$W_\mathrm{cw}$ at middle", fr"${fn(r['W_cw_mid'])}{kn}$   (arm = ${fn(r['arm_left'])}{m_}$)"),
+        (r"$W_\mathrm{cw}$ at end",    fr"${fn(r['W_cw_end'])}{kn}$   (arm = ${fn(r['L_left'])}{m_}$)"),
     ]
 
     n = len(rows)
@@ -340,47 +354,112 @@ def draw_result(fig, L_left, r, bg_color):
                      color=C_TXT, va="center", ha="left")
 
 
-def draw_moments(ax, r):
-    """Bar chart: stabilizing vs overturning vs required capacity."""
-    ax.clear()
-    ax.set_facecolor(C_BG)
+def draw_overhang_curves(fig, p, r):
+    """Two stacked panels swept over the right-side overhang L_right.
+    Top: M_over, M_stab, and the required capacity (M_over * SF_req).
+    Bottom: required counterweight in kN for two placements — at the
+    middle of the back span (arm = L_left/2) and at the far rear end
+    of the back span (arm = L_left). The current operating point is
+    marked on both panels with a vertical line and dots."""
+    import numpy as np
+    fig.clf()
+    fig.set_facecolor(C_BG)
 
-    M_stab = r["M_stab"]
-    M_over = r["M_over"]
-    SF     = r["SF"]
-    SF_req = r["SF_required"]
-    M_req  = M_over * SF_req
+    L_total         = p["L_total"]
+    w_per_m         = p["w_girder_per_m"]
+    W_LN            = p["W_LN"]
+    arm_LN_from_end = p["arm_LN_from_end"]
+    SF_req          = p["SF_required"]
 
-    cats   = [f"Stabilizing\n({MATH['W_left']})",
-              f"Overturning\n({MATH['W_right']} + {MATH['W_LN']})",
-              f"Required\n({MATH['M_over']}$\\cdot${SF_req:.2f})"]
-    vals   = [M_stab, M_over, M_req]
-    colors = [C_STAB, C_OVER, C_REQ]
+    cur_L_right = r["L_right"]
 
-    bars = ax.bar(cats, vals, color=colors, width=0.55, edgecolor="none")
-    for b, v in zip(bars, vals):
-        ax.text(b.get_x() + b.get_width() / 2, v + max(vals) * 0.015,
-                f"{v:,.0f}", ha="center", va="bottom",
-                fontsize=9, color=C_TXT)
+    # Sweep L_right from a sliver above 0 to a sliver below L_total so
+    # neither side has a degenerate zero arm.
+    L_rights = np.linspace(0.05, L_total - 0.05, 300)
+    L_lefts  = L_total - L_rights
 
-    # Threshold line at the required moment
-    ax.axhline(M_req, color=C_REQ, lw=1.0, linestyle=(0, (5, 3)), alpha=0.55)
+    M_stab_arr = w_per_m * L_lefts ** 2 / 2.0
+    M_over_arr = (w_per_m * L_rights ** 2 / 2.0
+                  + W_LN * (L_rights + arm_LN_from_end))
+    M_req_arr  = M_over_arr * SF_req
 
-    passed = SF >= SF_req
-    status_color = C_STAB if passed else C_OVER
-    ax.set_ylabel(r"Moment, $M$  (kN$\cdot$m)", fontsize=10, color=C_TXT)
-    ax.set_title(
-        f"{MATH['SF']} = {SF:.3f}   {'PASS' if passed else 'FAIL'}   "
-        f"(required {SF_req:.2f})",
-        fontsize=12, color=status_color, fontweight="bold", pad=10,
+    deficit_arr = np.maximum(M_req_arr - M_stab_arr, 0.0)
+    arm_mid     = L_lefts / 2.0
+    W_cw_mid_arr = deficit_arr / np.maximum(arm_mid, 0.01)
+    W_cw_end_arr = deficit_arr / np.maximum(L_lefts, 0.01)
+
+    # Y-axis cap for the CW panel — keep the asymptote near L_right -> L_total
+    # from drowning the rest of the curve.
+    y_cap = max(2.0 * r["W_cw_mid"], 1500.0, 2.0 * r["W_cw_end"])
+    W_cw_mid_clip = np.minimum(W_cw_mid_arr, y_cap)
+    W_cw_end_clip = np.minimum(W_cw_end_arr, y_cap)
+
+    gs  = fig.add_gridspec(2, 1, hspace=0.55, height_ratios=[1, 1])
+    ax1 = fig.add_subplot(gs[0])
+    ax2 = fig.add_subplot(gs[1])
+
+    # ---- Top: moments vs L_right ---------------------------------------
+    ax1.set_facecolor(C_BG)
+    ax1.plot(L_rights, M_over_arr, color=C_OVER, lw=2.0,
+             label=r"$M_\mathrm{over}$  (overturning)")
+    ax1.plot(L_rights, M_stab_arr, color=C_STAB, lw=2.0,
+             label=r"$M_\mathrm{stab}$  (back-span)")
+    ax1.plot(L_rights, M_req_arr, color=C_REQ, lw=1.5,
+             linestyle=(0, (5, 3)),
+             label=r"$M_\mathrm{over}\cdot\mathrm{SF}_\mathrm{req}$  (required)")
+    ax1.axvline(cur_L_right, color=C_DIM, lw=1, linestyle=":")
+    ax1.scatter([cur_L_right], [r["M_over"]],            color=C_OVER, s=42, zorder=5)
+    ax1.scatter([cur_L_right], [r["M_stab"]],            color=C_STAB, s=42, zorder=5)
+    ax1.scatter([cur_L_right], [r["M_over"] * SF_req],   color=C_REQ,  s=42, zorder=5)
+
+    ax1.set_xlabel(r"Right overhang  $L_\mathrm{right}$  (m)",
+                   fontsize=10, color=C_TXT)
+    ax1.set_ylabel(r"Moment, $M$  (kN$\cdot$m)",
+                   fontsize=10, color=C_TXT)
+    ax1.set_xlim(0, L_total)
+    ax1.legend(loc="upper left", fontsize=8.5, frameon=False)
+    ax1.tick_params(colors=C_TXT, labelsize=9)
+    ax1.grid(axis="y", alpha=0.25)
+    for s in ("top", "right"):
+        ax1.spines[s].set_visible(False)
+
+    # ---- Bottom: required counterweight vs L_right ---------------------
+    C_CW_MID = "#1d4ed8"
+    C_CW_END = "#ea580c"
+    ax2.set_facecolor(C_BG)
+    ax2.plot(L_rights, W_cw_mid_clip, color=C_CW_MID, lw=2.0,
+             label=r"$W_\mathrm{cw}$ at middle  (arm = $L_\mathrm{left}/2$)")
+    ax2.plot(L_rights, W_cw_end_clip, color=C_CW_END, lw=2.0,
+             label=r"$W_\mathrm{cw}$ at end       (arm = $L_\mathrm{left}$)")
+    ax2.axvline(cur_L_right, color=C_DIM, lw=1, linestyle=":")
+    if r["W_cw_mid"] <= y_cap:
+        ax2.scatter([cur_L_right], [r["W_cw_mid"]], color=C_CW_MID,
+                    s=42, zorder=5)
+    if r["W_cw_end"] <= y_cap:
+        ax2.scatter([cur_L_right], [r["W_cw_end"]], color=C_CW_END,
+                    s=42, zorder=5)
+
+    ax2.set_xlabel(r"Right overhang  $L_\mathrm{right}$  (m)",
+                   fontsize=10, color=C_TXT)
+    ax2.set_ylabel(r"Required $W_\mathrm{cw}$  (kN)",
+                   fontsize=10, color=C_TXT)
+    ax2.set_xlim(0, L_total)
+    ax2.set_ylim(0, y_cap * 1.05)
+    ax2.legend(loc="upper left", fontsize=8.5, frameon=False)
+    ax2.tick_params(colors=C_TXT, labelsize=9)
+    ax2.grid(axis="y", alpha=0.25)
+    for s in ("top", "right"):
+        ax2.spines[s].set_visible(False)
+
+    # "Girder moves left" annotation on the top panel
+    ymin, ymax = ax1.get_ylim()
+    y_arrow = ymax * 0.92
+    ax1.annotate(
+        "girder moves left", xy=(0.05 * L_total, y_arrow),
+        xytext=(cur_L_right * 0.95, y_arrow),
+        ha="right", va="center", fontsize=9, color=C_DIM,
+        arrowprops=dict(arrowstyle="->", color=C_DIM, lw=1.2),
     )
-    ax.tick_params(colors=C_TXT, labelsize=9)
-    for spine in ("top", "right"):
-        ax.spines[spine].set_visible(False)
-    for spine in ("left", "bottom"):
-        ax.spines[spine].set_color("#d1d5db")
-    ax.grid(axis="y", alpha=0.25, linestyle="-", color="#d1d5db")
-    ax.set_axisbelow(True)
 
 
 # --------------------------------------------------------------------------- #
@@ -570,13 +649,12 @@ class App(tk.Tk):
         self.canvas_schem.get_tk_widget().grid(row=0, column=0, sticky="nsew",
                                                pady=(0, 8))
 
-        # Moments bar chart
-        self.fig_bars = Figure(figsize=(7.4, 3.6), dpi=100, facecolor=C_BG)
-        self.ax_bars  = self.fig_bars.add_subplot(111)
-        self.fig_bars.subplots_adjust(left=0.10, right=0.98,
-                                      top=0.88, bottom=0.18)
-        self.canvas_bars = FigureCanvasTkAgg(self.fig_bars, master=right)
-        self.canvas_bars.get_tk_widget().grid(row=1, column=0, sticky="nsew")
+        # Moments + required counterweight, both as functions of right overhang
+        self.fig_curves = Figure(figsize=(7.4, 5.4), dpi=100, facecolor=C_BG)
+        self.fig_curves.subplots_adjust(left=0.11, right=0.97,
+                                        top=0.96, bottom=0.08)
+        self.canvas_curves = FigureCanvasTkAgg(self.fig_curves, master=right)
+        self.canvas_curves.get_tk_widget().grid(row=1, column=0, sticky="nsew")
 
         # Footer credit
         footer = ttk.Frame(self, padding=(20, 4, 20, 12))
@@ -623,10 +701,10 @@ class App(tk.Tk):
 
         draw_schematic(self.ax_schem, vals["L_left"], r)
         draw_cross_section(self.ax_cs, CROSS_SECTION)
-        draw_moments(self.ax_bars, r)
+        draw_overhang_curves(self.fig_curves, vals, r)
         draw_result(self.fig_result, vals["L_left"], r, self._result_bg)
         self.canvas_schem.draw_idle()
-        self.canvas_bars.draw_idle()
+        self.canvas_curves.draw_idle()
         self.canvas_result.draw_idle()
 
     def _render_status(self, r):

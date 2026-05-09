@@ -16,9 +16,11 @@ launching nose (right of pin) try to tip it over.
   derived from the workbook example in the README; edit & click Calculate.
   Two embedded matplotlib figures: free-body schematic (beam, pivot wedge,
   scaled load arrows, lever-arm dimensions, cross-section panel) and a
-  moments bar chart with the required-capacity threshold. Variables are
-  rendered as mathtext throughout (form labels, formulas card, figure
-  annotations). Theme is Sun Valley (Win 11 fluent) when
+  two-panel curves figure swept over right overhang L_right (top: M_over /
+  M_stab / required-capacity vs L_right; bottom: required counterweight in
+  kN vs L_right, one curve for back-span middle and one for back-span end).
+  Variables are rendered as mathtext throughout (form labels, formulas
+  card, figure annotations, numeric result panel). Theme is Sun Valley (Win 11 fluent) when
   `sv_ttk` is installed, else `clam`.
 
   Deps: `pip install matplotlib sv_ttk` — `matplotlib` is required for the

@@ -62,7 +62,9 @@ The window has three things going on:
 
 - **Inputs (left)** — six fields with mathtext labels: `L_left`, `L_total`, `w_girder`, `W_LN`, `a_LN,end`, `SF_req`. Defaults match the workbook example. Press **Enter** in any field or click **Calculate** to refresh; **Reset defaults** restores them.
 - **Free-body schematic (top right)** — beam, pivot wedge, scaled load arrows (green = stabilizing `W_left`; red = overturning `W_right`, `W_LN`), lever-arm dimensions. A side panel shows the girder cross-section with its computed area.
-- **Moments bar chart (bottom right)** — Stabilizing vs Overturning vs Required (`M_over × SF_req`), with a dashed threshold and a coloured PASS/FAIL title.
+- **Overhang curves (bottom right)** — two stacked panels swept over the right overhang `L_right` (because the girder is moving left during a launch retraction):
+  - *Top:* `M_over`, `M_stab`, and the required capacity `M_over × SF_req` as functions of `L_right`. Where `M_stab` and the required line cross is the launch position at which the system just barely passes without a counterweight.
+  - *Bottom:* required counterweight in kN vs `L_right`, with one curve assuming the counterweight is hung at the **middle** of the back span (arm = `L_left/2`) and one assuming it sits at the **end** (arm = `L_left`). The current operating point is dotted on both panels.
 
 The numeric result panel under the inputs is rendered with mathtext too, so the variable names look like proper math (`$L_\mathrm{left}$`, `$M_\mathrm{stab}$`, etc.).
 
