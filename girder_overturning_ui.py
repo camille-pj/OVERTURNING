@@ -427,9 +427,25 @@ def draw_overhang_curves(fig, p, r):
              linestyle=(0, (5, 3)),
              label=r"$M_\mathrm{over}\cdot\mathrm{SF}_\mathrm{req}$  (required)")
     ax1.axvline(cur_L_right, color=C_DIM, lw=1, linestyle=":")
-    ax1.scatter([cur_L_right], [r["M_over"]],            color=C_OVER, s=42, zorder=5)
-    ax1.scatter([cur_L_right], [r["M_stab"]],            color=C_STAB, s=42, zorder=5)
-    ax1.scatter([cur_L_right], [r["M_over"] * SF_req],   color=C_REQ,  s=42, zorder=5)
+    ax1.scatter([cur_L_right], [r["M_over"]],          color=C_OVER, s=42, zorder=5)
+    ax1.scatter([cur_L_right], [r["M_stab"]],          color=C_STAB, s=42, zorder=5)
+    ax1.scatter([cur_L_right], [r["M_over"] * SF_req], color=C_REQ,  s=42, zorder=5)
+    # Numeric values at current operating point
+    ax1.annotate(f"{r['M_over'] * SF_req:,.0f}",
+                 xy=(cur_L_right, r["M_over"] * SF_req),
+                 xytext=(8, 4), textcoords="offset points",
+                 fontsize=9, color=C_REQ, fontweight="bold",
+                 bbox=dict(facecolor=C_BG, edgecolor="none", pad=1.5))
+    ax1.annotate(f"{r['M_over']:,.0f}",
+                 xy=(cur_L_right, r["M_over"]),
+                 xytext=(8, 4), textcoords="offset points",
+                 fontsize=9, color=C_OVER, fontweight="bold",
+                 bbox=dict(facecolor=C_BG, edgecolor="none", pad=1.5))
+    ax1.annotate(f"{r['M_stab']:,.0f}",
+                 xy=(cur_L_right, r["M_stab"]),
+                 xytext=(8, -12), textcoords="offset points",
+                 fontsize=9, color=C_STAB, fontweight="bold",
+                 bbox=dict(facecolor=C_BG, edgecolor="none", pad=1.5))
 
     ax1.set_xlabel(r"Right overhang  $L_\mathrm{right}$  (m)",
                    fontsize=10, color=C_TXT)
@@ -454,6 +470,15 @@ def draw_overhang_curves(fig, p, r):
     ax_sf.axvline(cur_L_right, color=C_DIM, lw=1, linestyle=":")
     if r["SF"] <= sf_cap:
         ax_sf.scatter([cur_L_right], [r["SF"]], color=C_SF, s=42, zorder=5)
+        # Place the SF label opposite the tipping/required lines so it
+        # doesn't get drawn on top of one of them.
+        sf_above = r["SF"] >= max(SF_req, 1.0) + 0.3
+        offset_y = 8 if sf_above else -14
+        ax_sf.annotate(f"SF = {r['SF']:.3f}",
+                       xy=(cur_L_right, r["SF"]),
+                       xytext=(8, offset_y), textcoords="offset points",
+                       fontsize=9, color=C_SF, fontweight="bold",
+                       bbox=dict(facecolor=C_BG, edgecolor="none", pad=1.5))
 
     ax_sf.set_xlabel(r"Right overhang  $L_\mathrm{right}$  (m)",
                      fontsize=10, color=C_TXT)
@@ -479,9 +504,19 @@ def draw_overhang_curves(fig, p, r):
     if r["W_cw_mid"] <= y_cap:
         ax2.scatter([cur_L_right], [r["W_cw_mid"]], color=C_CW_MID,
                     s=42, zorder=5)
+        ax2.annotate(f"{r['W_cw_mid']:,.0f} kN",
+                     xy=(cur_L_right, r["W_cw_mid"]),
+                     xytext=(8, 4), textcoords="offset points",
+                     fontsize=9, color=C_CW_MID, fontweight="bold",
+                     bbox=dict(facecolor=C_BG, edgecolor="none", pad=1.5))
     if r["W_cw_end"] <= y_cap:
         ax2.scatter([cur_L_right], [r["W_cw_end"]], color=C_CW_END,
                     s=42, zorder=5)
+        ax2.annotate(f"{r['W_cw_end']:,.0f} kN",
+                     xy=(cur_L_right, r["W_cw_end"]),
+                     xytext=(8, -12), textcoords="offset points",
+                     fontsize=9, color=C_CW_END, fontweight="bold",
+                     bbox=dict(facecolor=C_BG, edgecolor="none", pad=1.5))
 
     ax2.set_xlabel(r"Right overhang  $L_\mathrm{right}$  (m)",
                    fontsize=10, color=C_TXT)
