@@ -1,33 +1,67 @@
 """
 Girder Overturning Check — Tkinter UI
 =====================================
-Same calculation as girder_overturning_check.py, but as a desktop form so
-parameters can be tweaked without re-running the script. All input fields
-are pre-populated with defaults derived from the source workbook example
-(see README.md "Example session"); edit any field and click Calculate.
+Same calculation as girder_overturning_check.py, in a modern desktop form
+with two embedded figures so the moment balance is visual, not just numeric:
 
-Inputs (with defaults):
-    L_left            14.97  m       back-span length (over the pin support)
+    1. Free-body schematic — beam + pin + downward load arrows scaled by
+       magnitude, with the moment arms about the pin annotated.
+    2. Moments bar chart — stabilizing vs overturning vs the required
+       capacity (overturning x SF_required), so PASS/FAIL is obvious at
+       a glance.
+
+Theming uses Sun Valley (`sv_ttk`) for a Windows 11 fluent look; if not
+installed, falls back to the cleaner built-in `clam` theme. Matplotlib
+is required for the figures.
+
+    pip install sv_ttk matplotlib
+
+Inputs (defaults derived from the workbook example in README.md):
+    L_left            14.97  m       back-span length (over the pin)
     L_total           33.145 m       girder + nose total length
     w_girder_per_m    34.38  kN/m    girder self-weight per metre
     W_LN              80.00  kN      total launching-nose weight
-    arm_LN_from_end   2.667  m       nose centroid from girder end (= L_LN/3)
+    arm_LN_from_end   2.667  m       nose centroid from girder end (L_LN/3)
     SF_required       2.00   -       overturning safety factor
 
-Same workbook formulas as the CLI script:
-    L_right       = L_total - L_left
-    W_left        = L_left  * w_per_m
-    W_right       = L_right * w_per_m
-    M_stab        = W_left  * L_left  / 2
-    M_over        = W_right * L_right / 2 + W_LN * (L_right + arm_LN_from_end)
-    SF            = M_stab / M_over
-    deficit       = M_over * SF_required - M_stab
+Workbook formulas, reproduced verbatim from girder_overturning_check.py:
+    L_right = L_total - L_left
+    W_left  = L_left  * w_per_m
+    W_right = L_right * w_per_m
+    M_stab  = W_left  * L_left  / 2
+    M_over  = W_right * L_right / 2 + W_LN * (L_right + arm_LN_from_end)
+    SF      = M_stab / M_over
+    deficit = M_over * SF_required - M_stab
 """
 
 from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+from tkinter import font as tkfont
+
+import matplotlib
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+matplotlib.rcParams["font.family"] = "sans-serif"
+matplotlib.rcParams["font.sans-serif"] = [
+    "Segoe UI Variable", "Segoe UI", "Helvetica", "DejaVu Sans",
+]
+
+try:
+    import sv_ttk
+    HAS_SVTTK = True
+except ImportError:  # graceful degradation
+    HAS_SVTTK = False
+
+# Make the window crisp on high-DPI Windows displays.
+try:
+    from ctypes import windll
+    windll.shcore.SetProcessDpiAwareness(1)
+except Exception:
+    pass
+
 
 DEFAULTS = {
     "L_left":          "14.97",
@@ -39,13 +73,23 @@ DEFAULTS = {
 }
 
 FIELD_LABELS = [
-    ("L_left",          "L_left  (back-span length)",        "m"),
-    ("L_total",         "L_total  (girder + nose)",          "m"),
-    ("w_girder_per_m",  "w_girder_per_m  (self-weight)",     "kN/m"),
-    ("W_LN",            "W_LN  (launching-nose weight)",     "kN"),
-    ("arm_LN_from_end", "arm_LN_from_end  (nose centroid)",  "m"),
-    ("SF_required",     "SF_required",                       "-"),
+    ("L_left",          "L_left",            "back-span length over pin",     "m"),
+    ("L_total",         "L_total",           "girder + nose total",           "m"),
+    ("w_girder_per_m",  "w_girder_per_m",    "self-weight per metre",         "kN/m"),
+    ("W_LN",            "W_LN",              "launching-nose weight",         "kN"),
+    ("arm_LN_from_end", "arm_LN_from_end",   "nose centroid (L_LN / 3)",      "m"),
+    ("SF_required",     "SF_required",       "required safety factor",        "-"),
 ]
+
+# Palette
+C_BG       = "#fafafa"
+C_BEAM     = "#374151"
+C_PIN      = "#1d4ed8"
+C_STAB     = "#16a34a"   # stabilizing / pass
+C_OVER     = "#dc2626"   # overturning / fail
+C_REQ      = "#7c3aed"   # required moment threshold
+C_DIM      = "#6b7280"
+C_TXT      = "#111827"
 
 
 def compute(L_left, L_total, w_per_m, W_LN, arm_LN_from_end, SF_required):
@@ -71,60 +115,294 @@ def compute(L_left, L_total, w_per_m, W_LN, arm_LN_from_end, SF_required):
     )
 
 
+# --------------------------------------------------------------------------- #
+# Figures
+# --------------------------------------------------------------------------- #
+
+def draw_schematic(ax, L_left, r):
+    """Free-body diagram: beam centred on the pin (x = 0).
+    Left of pin = stabilizing, right of pin = overturning."""
+    ax.clear()
+    ax.set_facecolor(C_BG)
+
+    L_right   = r["L_right"]
+    arm_left  = r["arm_left"]
+    arm_right = r["arm_right"]
+    arm_LN    = r["arm_LN"]
+    W_left    = r["W_left"]
+    W_right   = r["W_right"]
+    W_LN      = r["W_LN"]
+
+    pin       = 0.0
+    left_end  = -L_left
+    right_end = L_right
+    far       = max(right_end, arm_LN) + 1.5
+
+    # Girder beam
+    ax.plot([left_end, right_end], [0, 0],
+            lw=12, color=C_BEAM, solid_capstyle="butt", zorder=2)
+
+    # Lever-arm extension if W_LN sits past the girder end (workbook geometry)
+    if arm_LN > right_end:
+        ax.plot([right_end, arm_LN], [0, 0],
+                lw=2, color=C_DIM, linestyle=(0, (4, 3)), zorder=1)
+
+    # Pin support — triangle + hatched ground
+    ph = 0.55
+    ax.fill([pin - 0.55, pin + 0.55, pin], [-ph, -ph, 0],
+            color=C_PIN, zorder=3)
+    ax.plot([pin - 1.4, pin + 1.4], [-ph, -ph], lw=1.4, color=C_PIN)
+    for x in [-1.1, -0.7, -0.3, 0.1, 0.5, 0.9]:
+        ax.plot([pin + x, pin + x - 0.22], [-ph, -ph - 0.22],
+                lw=1, color=C_PIN)
+    ax.text(pin, -ph - 0.55, "pin", ha="center", va="top",
+            fontsize=9, color=C_PIN, fontweight="bold")
+
+    # Load arrows — length proportional to magnitude
+    max_w = max(W_left, W_right, W_LN, 1.0)
+    arr_max = 1.7
+
+    def arrow(x, w, color, label):
+        h = arr_max * w / max_w
+        ax.annotate(
+            "", xy=(x, 0.05), xytext=(x, h + 0.05),
+            arrowprops=dict(arrowstyle="-|>", color=color, lw=2.2,
+                            mutation_scale=18),
+        )
+        ax.text(x, h + 0.18, f"{label}\n{w:,.1f} kN",
+                ha="center", va="bottom", fontsize=9, color=color)
+
+    arrow(-arm_left, W_left,  C_STAB, "W_left")
+    arrow(arm_right, W_right, C_OVER, "W_right")
+    arrow(arm_LN,    W_LN,    C_OVER, "W_LN")
+
+    # Lever-arm dimensions below the beam — stacked rows so labels don't collide
+    def dim(x1, x2, y, label, color=C_DIM):
+        ax.annotate("", xy=(x2, y), xytext=(x1, y),
+                    arrowprops=dict(arrowstyle="<->", color=color, lw=1.2))
+        ax.text((x1 + x2) / 2, y - 0.22, label,
+                ha="center", va="top", fontsize=8.5, color=C_TXT)
+
+    dim(left_end, pin,        -1.55, f"L_left = {L_left:.2f} m",   C_STAB)
+    dim(pin,      right_end,  -1.55, f"L_right = {L_right:.2f} m", C_OVER)
+    dim(pin,      arm_LN,     -2.30, f"arm_LN = {arm_LN:.2f} m",   C_DIM)
+
+    ax.set_xlim(left_end - 1.5, far)
+    ax.set_ylim(-3.2, arr_max + 1.4)
+    ax.set_aspect("auto")
+    ax.axis("off")
+    ax.set_title("Free-body diagram  ·  loads & moment arms about pin",
+                 fontsize=10.5, color=C_TXT, pad=10)
+
+
+def draw_moments(ax, r):
+    """Bar chart: stabilizing vs overturning vs required capacity."""
+    ax.clear()
+    ax.set_facecolor(C_BG)
+
+    M_stab = r["M_stab"]
+    M_over = r["M_over"]
+    SF     = r["SF"]
+    SF_req = r["SF_required"]
+    M_req  = M_over * SF_req
+
+    cats   = ["Stabilizing\n(W_left)", "Overturning\n(W_right + W_LN)",
+              f"Required\n(M_over × {SF_req:.2f})"]
+    vals   = [M_stab, M_over, M_req]
+    colors = [C_STAB, C_OVER, C_REQ]
+
+    bars = ax.bar(cats, vals, color=colors, width=0.55, edgecolor="none")
+    for b, v in zip(bars, vals):
+        ax.text(b.get_x() + b.get_width() / 2, v + max(vals) * 0.015,
+                f"{v:,.0f}", ha="center", va="bottom",
+                fontsize=9, color=C_TXT)
+
+    # Threshold line at the required moment
+    ax.axhline(M_req, color=C_REQ, lw=1.0, linestyle=(0, (5, 3)), alpha=0.55)
+
+    passed = SF >= SF_req
+    status_color = C_STAB if passed else C_OVER
+    ax.set_ylabel("Moment  (kN-m)", fontsize=9, color=C_TXT)
+    ax.set_title(
+        f"SF = {SF:.3f}   {'PASS' if passed else 'FAIL'}   "
+        f"(required {SF_req:.2f})",
+        fontsize=11, color=status_color, fontweight="bold", pad=10,
+    )
+    ax.tick_params(colors=C_TXT, labelsize=9)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    for spine in ("left", "bottom"):
+        ax.spines[spine].set_color("#d1d5db")
+    ax.grid(axis="y", alpha=0.25, linestyle="-", color="#d1d5db")
+    ax.set_axisbelow(True)
+
+
+# --------------------------------------------------------------------------- #
+# UI
+# --------------------------------------------------------------------------- #
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Girder Overturning Check")
-        self.resizable(False, False)
+        self.minsize(1100, 720)
+        self.geometry("1240x780")
+        self._apply_theme()
         self._build()
-        self._calculate()  # show defaults' result on launch
+        self._calculate()
+
+    def _apply_theme(self):
+        # Default font — Segoe UI Variable on Win 11, Segoe UI elsewhere.
+        for name in ("Segoe UI Variable", "Segoe UI", "Helvetica"):
+            try:
+                test = tkfont.Font(family=name, size=10)
+                if test.actual("family"):
+                    family = name
+                    break
+            except tk.TclError:
+                continue
+        else:
+            family = "TkDefaultFont"
+
+        for fname in ("TkDefaultFont", "TkTextFont", "TkMenuFont",
+                      "TkHeadingFont"):
+            try:
+                tkfont.nametofont(fname).configure(family=family, size=10)
+            except tk.TclError:
+                pass
+
+        if HAS_SVTTK:
+            sv_ttk.set_theme("light")
+        else:
+            ttk.Style().theme_use("clam")
+
+        self.configure(bg=C_BG)
+
+        style = ttk.Style()
+        style.configure("Heading.TLabel", font=(family, 16, "bold"),
+                        foreground=C_TXT, background=C_BG)
+        style.configure("Sub.TLabel", font=(family, 10),
+                        foreground=C_DIM, background=C_BG)
+        style.configure("FieldName.TLabel", font=(family, 10, "bold"),
+                        foreground=C_TXT)
+        style.configure("FieldHelp.TLabel", font=(family, 9),
+                        foreground=C_DIM)
+        style.configure("Result.TLabel", font=("Consolas", 10),
+                        foreground=C_TXT)
+        style.configure("Status.TLabel", font=(family, 14, "bold"))
+        style.configure("Accent.TButton", font=(family, 10, "bold"))
+        style.configure("Card.TFrame", background="#ffffff", relief="flat")
 
     def _build(self):
-        pad = dict(padx=8, pady=4)
+        # Title bar
+        header = ttk.Frame(self, padding=(20, 16, 20, 8))
+        header.grid(row=0, column=0, columnspan=2, sticky="ew")
+        ttk.Label(header, text="Girder Overturning Check",
+                  style="Heading.TLabel").pack(anchor="w")
+        ttk.Label(header,
+                  text="Launching girder on a pin — back span vs girder + nose",
+                  style="Sub.TLabel").pack(anchor="w", pady=(2, 0))
 
-        # Inputs frame
-        inp = ttk.LabelFrame(self, text="Inputs")
-        inp.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 6))
+        # Two-column body
+        body = ttk.Frame(self, padding=(16, 4, 16, 16))
+        body.grid(row=1, column=0, columnspan=2, sticky="nsew")
+        self.rowconfigure(1, weight=1)
+        self.columnconfigure(0, weight=1)
+        body.columnconfigure(0, weight=0, minsize=360)
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(0, weight=1)
 
+        # ---- Left column: inputs + numeric result -----------------------
+        left = ttk.Frame(body)
+        left.grid(row=0, column=0, sticky="nsw", padx=(0, 12))
+
+        inputs = ttk.LabelFrame(left, text="  Inputs  ", padding=14)
+        inputs.pack(fill="x")
         self.entries: dict[str, ttk.Entry] = {}
-        for i, (key, label, unit) in enumerate(FIELD_LABELS):
-            ttk.Label(inp, text=label).grid(row=i, column=0, sticky="w", **pad)
-            e = ttk.Entry(inp, width=12, justify="right")
+        for i, (key, name, helptxt, unit) in enumerate(FIELD_LABELS):
+            ttk.Label(inputs, text=name, style="FieldName.TLabel").grid(
+                row=i * 2, column=0, sticky="w", padx=(0, 12), pady=(6, 0)
+            )
+            e = ttk.Entry(inputs, width=12, justify="right")
             e.insert(0, DEFAULTS[key])
-            e.grid(row=i, column=1, **pad)
-            ttk.Label(inp, text=unit, foreground="#666").grid(
-                row=i, column=2, sticky="w", **pad
+            e.grid(row=i * 2, column=1, sticky="ew", pady=(6, 0))
+            e.bind("<Return>", lambda _e: self._calculate())
+            ttk.Label(inputs, text=unit, style="FieldHelp.TLabel").grid(
+                row=i * 2, column=2, sticky="w", padx=(8, 0), pady=(6, 0)
+            )
+            ttk.Label(inputs, text=helptxt, style="FieldHelp.TLabel").grid(
+                row=i * 2 + 1, column=0, columnspan=3,
+                sticky="w", pady=(0, 2),
             )
             self.entries[key] = e
+        inputs.columnconfigure(1, weight=1)
 
         # Buttons
-        btns = ttk.Frame(self)
-        btns.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 6))
-        ttk.Button(btns, text="Calculate",  command=self._calculate).pack(
-            side="left", padx=(0, 6)
-        )
-        ttk.Button(btns, text="Reset defaults", command=self._reset).pack(side="left")
+        btns = ttk.Frame(left)
+        btns.pack(fill="x", pady=(12, 12))
+        ttk.Button(btns, text="Calculate", style="Accent.TButton",
+                   command=self._calculate).pack(side="left", padx=(0, 8),
+                                                 ipadx=8, ipady=2)
+        ttk.Button(btns, text="Reset defaults",
+                   command=self._reset).pack(side="left")
 
-        # Output frame
-        out = ttk.LabelFrame(self, text="Result")
-        out.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        # Status banner
+        self.status_var = tk.StringVar(value="")
+        self.status_lbl = ttk.Label(left, textvariable=self.status_var,
+                                    style="Status.TLabel", anchor="center",
+                                    padding=(0, 10))
+        self.status_lbl.pack(fill="x", pady=(0, 8))
 
+        # Numeric result
+        out = ttk.LabelFrame(left, text="  Numeric result  ", padding=10)
+        out.pack(fill="both", expand=True)
         self.txt = tk.Text(
-            out, width=58, height=20, font=("Consolas", 10),
-            relief="flat", background="#f7f7f7",
+            out, width=44, height=14,
+            font=("Consolas", 10),
+            relief="flat", borderwidth=0,
+            background="#ffffff" if HAS_SVTTK else "#f3f4f6",
+            foreground=C_TXT, padx=10, pady=10,
+            highlightthickness=0,
         )
-        self.txt.pack(padx=8, pady=8)
+        self.txt.pack(fill="both", expand=True)
         self.txt.configure(state="disabled")
+
+        # ---- Right column: figures --------------------------------------
+        right = ttk.Frame(body)
+        right.grid(row=0, column=1, sticky="nsew")
+        right.rowconfigure(0, weight=4)
+        right.rowconfigure(1, weight=5)
+        right.columnconfigure(0, weight=1)
+
+        # Schematic
+        self.fig_schem = Figure(figsize=(7.4, 3.4), dpi=100, facecolor=C_BG)
+        self.ax_schem  = self.fig_schem.add_subplot(111)
+        self.fig_schem.subplots_adjust(left=0.03, right=0.99,
+                                       top=0.92, bottom=0.05)
+        self.canvas_schem = FigureCanvasTkAgg(self.fig_schem, master=right)
+        self.canvas_schem.get_tk_widget().grid(row=0, column=0, sticky="nsew",
+                                               pady=(0, 8))
+
+        # Moments bar chart
+        self.fig_bars = Figure(figsize=(7.4, 3.6), dpi=100, facecolor=C_BG)
+        self.ax_bars  = self.fig_bars.add_subplot(111)
+        self.fig_bars.subplots_adjust(left=0.10, right=0.98,
+                                      top=0.88, bottom=0.18)
+        self.canvas_bars = FigureCanvasTkAgg(self.fig_bars, master=right)
+        self.canvas_bars.get_tk_widget().grid(row=1, column=0, sticky="nsew")
+
+    # ---- Actions --------------------------------------------------------
 
     def _read_inputs(self):
         try:
-            return {k: float(self.entries[k].get()) for k, _, _ in FIELD_LABELS}
+            return {k: float(self.entries[k].get()) for k, _, _, _ in FIELD_LABELS}
         except ValueError as exc:
-            messagebox.showerror("Invalid input", f"All fields must be numeric.\n{exc}")
+            messagebox.showerror("Invalid input",
+                                 f"All fields must be numeric.\n{exc}")
             return None
 
     def _reset(self):
-        for k, _, _ in FIELD_LABELS:
+        for k, _, _, _ in FIELD_LABELS:
             self.entries[k].delete(0, "end")
             self.entries[k].insert(0, DEFAULTS[k])
         self._calculate()
@@ -133,11 +411,11 @@ class App(tk.Tk):
         vals = self._read_inputs()
         if vals is None:
             return
-
         if vals["L_left"] <= 0 or vals["L_left"] >= vals["L_total"]:
             messagebox.showerror(
                 "Out of range",
-                f"L_left must be in (0, {vals['L_total']:.3f}) m to keep the system on the pin.",
+                f"L_left must be in (0, {vals['L_total']:.3f}) m "
+                f"to keep the system on the pin.",
             )
             return
 
@@ -145,48 +423,44 @@ class App(tk.Tk):
             vals["L_left"], vals["L_total"], vals["w_girder_per_m"],
             vals["W_LN"], vals["arm_LN_from_end"], vals["SF_required"],
         )
-        self._render(vals["L_left"], r)
+        self._render_status(r)
+        self._render_text(vals["L_left"], r)
 
-    def _render(self, L_left, r):
+        draw_schematic(self.ax_schem, vals["L_left"], r)
+        draw_moments(self.ax_bars, r)
+        self.canvas_schem.draw_idle()
+        self.canvas_bars.draw_idle()
+
+    def _render_status(self, r):
         passed = r["SF"] >= r["SF_required"]
-        status = "PASS" if passed else "FAIL"
-        deficit_label = "(excess capacity)" if r["deficit"] < 0 else "(moment deficit)"
+        if passed:
+            self.status_var.set(f"PASS    SF = {r['SF']:.3f}  ≥  {r['SF_required']:.2f}")
+            self.status_lbl.configure(foreground=C_STAB)
+        else:
+            self.status_var.set(f"FAIL    SF = {r['SF']:.3f}  <  {r['SF_required']:.2f}")
+            self.status_lbl.configure(foreground=C_OVER)
 
+    def _render_text(self, L_left, r):
+        deficit_label = ("excess capacity" if r["deficit"] < 0
+                         else "moment deficit")
         lines = [
-            f"  L_left              : {L_left:>9.3f} m",
-            f"  L_right             : {r['L_right']:>9.3f} m",
+            f"  L_left              {L_left:>9.3f}  m",
+            f"  L_right             {r['L_right']:>9.3f}  m",
             "",
             "  Loads",
-            f"    W_left            : {r['W_left']:>9.2f} kN  @ {r['arm_left']:>6.2f} m from pin",
-            f"    W_right           : {r['W_right']:>9.2f} kN  @ {r['arm_right']:>6.2f} m from pin",
-            f"    W_LN              : {r['W_LN']:>9.2f} kN  @ {r['arm_LN']:>6.2f} m from pin",
+            f"    W_left            {r['W_left']:>9.2f}  kN  @ {r['arm_left']:>6.2f} m",
+            f"    W_right           {r['W_right']:>9.2f}  kN  @ {r['arm_right']:>6.2f} m",
+            f"    W_LN              {r['W_LN']:>9.2f}  kN  @ {r['arm_LN']:>6.2f} m",
             "",
             "  Moments about pin",
-            f"    Stabilizing (left): {r['M_stab']:>9.2f} kN-m",
-            f"    Overturning (rt)  : {r['M_over']:>9.2f} kN-m",
+            f"    Stabilizing       {r['M_stab']:>9.2f}  kN-m",
+            f"    Overturning       {r['M_over']:>9.2f}  kN-m",
             "",
-            "  Result",
-            f"    Safety Factor     : {r['SF']:>9.3f}",
-            f"    Required SF       : {r['SF_required']:>9.2f}",
-            f"    Status            :    {status}",
-            f"    Deficit           : {abs(r['deficit']):>9.2f} kN-m {deficit_label}",
+            f"  Deficit             {abs(r['deficit']):>9.2f}  kN-m  ({deficit_label})",
         ]
-
         self.txt.configure(state="normal")
         self.txt.delete("1.0", "end")
         self.txt.insert("1.0", "\n".join(lines))
-
-        # Colour the status line (last block) green/red
-        self.txt.tag_configure("pass", foreground="#117a3d", font=("Consolas", 10, "bold"))
-        self.txt.tag_configure("fail", foreground="#b00020", font=("Consolas", 10, "bold"))
-        # Find the Status line and tag the word PASS/FAIL
-        for idx, line in enumerate(lines, start=1):
-            if line.lstrip().startswith("Status"):
-                start = f"{idx}.0"
-                end   = f"{idx}.end"
-                self.txt.tag_add("pass" if passed else "fail", start, end)
-                break
-
         self.txt.configure(state="disabled")
 
 

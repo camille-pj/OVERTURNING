@@ -11,9 +11,15 @@ launching nose (right of pin) try to tip it over.
   near the top, `XLSX_PATH`), prompts for `L_left`, prints the report.
   Depends on `openpyxl`.
 - [girder_overturning_ui.py](girder_overturning_ui.py) — Tkinter desktop UI.
-  Self-contained — no Excel, no extra deps. All input fields are pre-populated
-  with defaults derived from the workbook example in the README; edit & click
-  Calculate. Use this when iterating on `L_left` or any parameter.
+  Self-contained (no Excel). All input fields are pre-populated with defaults
+  derived from the workbook example in the README; edit & click Calculate.
+  Two embedded matplotlib figures: free-body schematic (beam, pin, scaled
+  load arrows, lever-arm dimensions) and a moments bar chart with the
+  required-capacity threshold. Theme is Sun Valley (Win 11 fluent) when
+  `sv_ttk` is installed, else `clam`.
+
+  Deps: `pip install matplotlib sv_ttk` — `matplotlib` is required for the
+  figures, `sv_ttk` is optional (graceful fallback to `clam`).
 - [README.md](README.md) — end-user instructions for the CLI script
   (Python install, `openpyxl`, how to run, troubleshooting).
 
