@@ -135,6 +135,7 @@ def print_report(L_left: float, r: dict) -> None:
     print()
     print(bar)
     print("  GIRDER OVERTURNING CHECK")
+    print("  Developed by Albert Pamonag and Camille Pajarillaga")
     print(bar)
     print("  Input")
     print(f"    L_left              : {L_left:.2f} m")

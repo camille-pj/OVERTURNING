@@ -468,11 +468,11 @@ class App(tk.Tk):
         ttk.Label(header, text="Girder Overturning Check",
                   style="Heading.TLabel").pack(anchor="w")
         ttk.Label(header,
-                  text="Launching girder on a pin — back span vs girder + nose",
+                  text="Launching girder on a pivot — back span vs girder + nose",
                   style="Sub.TLabel").pack(anchor="w", pady=(2, 0))
 
         # Two-column body
-        body = ttk.Frame(self, padding=(16, 4, 16, 16))
+        body = ttk.Frame(self, padding=(16, 4, 16, 8))
         body.grid(row=1, column=0, columnspan=2, sticky="nsew")
         self.rowconfigure(1, weight=1)
         self.columnconfigure(0, weight=1)
@@ -577,6 +577,15 @@ class App(tk.Tk):
                                       top=0.88, bottom=0.18)
         self.canvas_bars = FigureCanvasTkAgg(self.fig_bars, master=right)
         self.canvas_bars.get_tk_widget().grid(row=1, column=0, sticky="nsew")
+
+        # Footer credit
+        footer = ttk.Frame(self, padding=(20, 4, 20, 12))
+        footer.grid(row=2, column=0, columnspan=2, sticky="ew")
+        ttk.Label(
+            footer,
+            text="Developed by Albert Pamonag and Camille Pajarillaga",
+            style="Sub.TLabel",
+        ).pack(anchor="center")
 
     # ---- Actions --------------------------------------------------------
 
