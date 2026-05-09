@@ -6,6 +6,7 @@ launching nose (right of pin) try to tip it over.
 
 ## Layout
 
+- [main.py](main.py) — entry point. `py main.py` launches the desktop UI.
 - [girder_overturning_check.py](girder_overturning_check.py) — CLI script.
   Reads every parameter from `GIRDER OVERTURNING CHECK (1).xlsx` (path hard-coded
   near the top, `XLSX_PATH`), prompts for `L_left`, prints the report.
@@ -52,6 +53,7 @@ If a formula or parameter changes in the workbook:
 ## Running
 
 ```powershell
-python girder_overturning_check.py    # CLI, needs openpyxl + the .xlsx
-python girder_overturning_ui.py       # GUI, stdlib only
+py main.py                            # GUI (the easy way) — same as girder_overturning_ui.py
+py girder_overturning_ui.py           # GUI direct
+py girder_overturning_check.py        # CLI, needs openpyxl + the .xlsx
 ```
