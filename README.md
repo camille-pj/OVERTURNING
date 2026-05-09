@@ -1,8 +1,15 @@
 # Girder Overturning Check
 
-Desktop tool for the launching-girder overturning check on a pivot — back span (left) holds the system down, girder span + launching nose (right) try to tip it over. Replicates `GIRDER OVERTURNING CHECK (1).xlsx` formulas verbatim and adds a modern GUI with a free-body diagram, cross-section panel, and moments bar chart.
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776ab?logo=python&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Windows-0078d6?logo=windows&logoColor=white)
+![GUI](https://img.shields.io/badge/GUI-Tkinter%20%2B%20Sun%20Valley-2ea043)
+![Figures](https://img.shields.io/badge/Figures-matplotlib-11557c?logo=plotly&logoColor=white)
+![Status](https://img.shields.io/badge/Status-Active-00b894)
 
-Developed by **Albert Pamonag and Camille Pajarillaga**.
+Desktop tool for the launching-girder overturning check on a pivot — back span (left) holds the system down, girder span + launching nose (right) try to tip it over. Replicates `GIRDER OVERTURNING CHECK (1).xlsx` formulas verbatim and adds a modern GUI with a free-body diagram, cross-section panel, and overhang-sweep curves (moments, overturning factor, required counterweight).
+
+> **Main developer:** Camille Pajarillaga
+> **Supporting:** Albert Pamonag
 
 ---
 
@@ -94,7 +101,7 @@ Type the value, press **Enter**, and the report prints to the screen.
 ```
 ============================================================
   GIRDER OVERTURNING CHECK
-  Developed by Albert Pamonag and Camille Pajarillaga
+  Main developer: Camille Pajarillaga   ·   Supporting: Albert Pamonag
 ============================================================
   Input
     L_left              : 14.97 m

@@ -799,7 +799,7 @@ class App(tk.Tk):
         footer.grid(row=2, column=0, columnspan=2, sticky="ew")
         ttk.Label(
             footer,
-            text="Developed by Albert Pamonag and Camille Pajarillaga",
+            text="Main developer: Camille Pajarillaga   ·   Supporting: Albert Pamonag",
             style="Sub.TLabel",
         ).pack(anchor="center")
 
