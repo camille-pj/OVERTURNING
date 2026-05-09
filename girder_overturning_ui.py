@@ -284,6 +284,62 @@ def draw_cross_section(ax, verts):
     )
 
 
+def draw_result(fig, L_left, r, bg_color):
+    """Numeric result panel rendered as mathtext lines in a Figure.
+    Replaces a Text widget so the variable names look like math and
+    the labels can't wrap mid-value."""
+    fig.clf()
+    fig.set_facecolor(bg_color)
+
+    deficit_label = ("excess capacity" if r["deficit"] < 0
+                     else "moment deficit")
+
+    knm = r"\,\mathrm{kN}\!\cdot\!\mathrm{m}"
+    kn  = r"\,\mathrm{kN}"
+    m_  = r"\,\mathrm{m}"
+
+    # Format with thousands separators, then escape commas as {,} so
+    # mathtext doesn't insert a thin-space after each one.
+    def fn(v, dec=2):
+        return f"{v:,.{dec}f}".replace(",", "{,}")
+
+    rows = [
+        (r"$L_\mathrm{left}$",  fr"${fn(L_left, 3)}{m_}$"),
+        (r"$L_\mathrm{right}$", fr"${fn(r['L_right'], 3)}{m_}$"),
+        None,
+        ("HEAD", "Loads"),
+        (r"$W_\mathrm{left}$",  fr"${fn(r['W_left'])}{kn}$   at  ${fn(r['arm_left'])}{m_}$"),
+        (r"$W_\mathrm{right}$", fr"${fn(r['W_right'])}{kn}$   at  ${fn(r['arm_right'])}{m_}$"),
+        (r"$W_\mathrm{LN}$",    fr"${fn(r['W_LN'])}{kn}$   at  ${fn(r['arm_LN'])}{m_}$"),
+        None,
+        ("HEAD", "Moments about pivot"),
+        (r"$M_\mathrm{stab}$",  fr"${fn(r['M_stab'])}{knm}$"),
+        (r"$M_\mathrm{over}$",  fr"${fn(r['M_over'])}{knm}$"),
+        None,
+        (r"$\mathrm{deficit}$", fr"${fn(abs(r['deficit']))}{knm}$   ({deficit_label})"),
+    ]
+
+    n = len(rows)
+    y_top, y_bot = 0.96, 0.04
+    y_step = (y_top - y_bot) / max(n - 1, 1)
+    x_eq_left  = 0.34   # right-edge x for labels
+    x_eq_right = 0.36   # left-edge x for "= value"
+
+    for i, row in enumerate(rows):
+        if row is None:
+            continue
+        y = y_top - i * y_step
+        if isinstance(row, tuple) and row[0] == "HEAD":
+            fig.text(0.04, y, row[1], fontsize=11.5, color=C_TXT,
+                     va="center", fontweight="bold")
+        else:
+            label, value = row
+            fig.text(x_eq_left, y, label, fontsize=11, color=C_TXT,
+                     va="center", ha="right")
+            fig.text(x_eq_right, y, "= " + value, fontsize=11,
+                     color=C_TXT, va="center", ha="left")
+
+
 def draw_moments(ax, r):
     """Bar chart: stabilizing vs overturning vs required capacity."""
     ax.clear()
@@ -485,19 +541,16 @@ class App(tk.Tk):
                                     padding=(0, 10))
         self.status_lbl.pack(fill="x", pady=(0, 8))
 
-        # Numeric result
-        out = ttk.LabelFrame(left, text="  Numeric result  ", padding=10)
+        # Numeric result — rendered as mathtext lines in a matplotlib figure
+        # so the variable names look like math and lines can't wrap mid-value.
+        out = ttk.LabelFrame(left, text="  Numeric result  ", padding=4)
         out.pack(fill="both", expand=True)
-        self.txt = tk.Text(
-            out, width=44, height=14,
-            font=("Consolas", 10),
-            relief="flat", borderwidth=0,
-            background="#ffffff" if HAS_SVTTK else "#f3f4f6",
-            foreground=C_TXT, padx=10, pady=10,
-            highlightthickness=0,
-        )
-        self.txt.pack(fill="both", expand=True)
-        self.txt.configure(state="disabled")
+        self._result_bg = "#ffffff" if HAS_SVTTK else "#f3f4f6"
+        self.fig_result = Figure(figsize=(4.4, 4.6), dpi=110,
+                                 facecolor=self._result_bg)
+        self.canvas_result = FigureCanvasTkAgg(self.fig_result, master=out)
+        self.canvas_result.get_tk_widget().pack(fill="both", expand=True,
+                                                padx=4, pady=4)
 
         # ---- Right column: figures --------------------------------------
         right = ttk.Frame(body)
@@ -549,7 +602,7 @@ class App(tk.Tk):
             messagebox.showerror(
                 "Out of range",
                 f"L_left must be in (0, {vals['L_total']:.3f}) m "
-                f"to keep the system on the pin.",
+                f"to keep the system on the pivot.",
             )
             return
 
@@ -558,13 +611,14 @@ class App(tk.Tk):
             vals["W_LN"], vals["arm_LN_from_end"], vals["SF_required"],
         )
         self._render_status(r)
-        self._render_text(vals["L_left"], r)
 
         draw_schematic(self.ax_schem, vals["L_left"], r)
         draw_cross_section(self.ax_cs, CROSS_SECTION)
         draw_moments(self.ax_bars, r)
+        draw_result(self.fig_result, vals["L_left"], r, self._result_bg)
         self.canvas_schem.draw_idle()
         self.canvas_bars.draw_idle()
+        self.canvas_result.draw_idle()
 
     def _render_status(self, r):
         passed = r["SF"] >= r["SF_required"]
@@ -575,28 +629,6 @@ class App(tk.Tk):
             self.status_var.set(f"FAIL    SF = {r['SF']:.3f}  <  {r['SF_required']:.2f}")
             self.status_lbl.configure(foreground=C_OVER)
 
-    def _render_text(self, L_left, r):
-        deficit_label = ("excess capacity" if r["deficit"] < 0
-                         else "moment deficit")
-        lines = [
-            f"  L_left              {L_left:>9.3f}  m",
-            f"  L_right             {r['L_right']:>9.3f}  m",
-            "",
-            "  Loads",
-            f"    W_left            {r['W_left']:>9.2f}  kN  @ {r['arm_left']:>6.2f} m",
-            f"    W_right           {r['W_right']:>9.2f}  kN  @ {r['arm_right']:>6.2f} m",
-            f"    W_LN              {r['W_LN']:>9.2f}  kN  @ {r['arm_LN']:>6.2f} m",
-            "",
-            "  Moments about pin",
-            f"    Stabilizing       {r['M_stab']:>9.2f}  kN-m",
-            f"    Overturning       {r['M_over']:>9.2f}  kN-m",
-            "",
-            f"  Deficit             {abs(r['deficit']):>9.2f}  kN-m  ({deficit_label})",
-        ]
-        self.txt.configure(state="normal")
-        self.txt.delete("1.0", "end")
-        self.txt.insert("1.0", "\n".join(lines))
-        self.txt.configure(state="disabled")
 
 
 if __name__ == "__main__":
