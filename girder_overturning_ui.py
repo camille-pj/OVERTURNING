@@ -108,16 +108,28 @@ FORMULAS = [
 ]
 
 # Girder cross-section polygon (m). Closed implicitly: last vertex links
-# back to the first. User-supplied; treated as canonical geometry of the
-# girder under analysis.
+# back to the first. Symmetric I/T-girder — top flange + single tapered
+# haunch + continuous web/bottom block.
+#
+# Component breakdown (matches the source table; b in mm, h in mm):
+#   Top flange    1050 x  150 = 157,500 mm^2
+#   Haunch        863  x  140 = 120,820 mm^2  (b = avg width, trapezoid)
+#   Web           675  x 1510 = 1,019,250 mm^2
+#   Bottom flange 675  x  200 =   135,000 mm^2
+#   Total                     = 1,432,570 mm^2 = 1.4326 m^2
+#
+# At rho_concrete = 24 kN/m^3 this gives w = 24 * 1.4326 = 34.38 kN/m,
+# which matches the default w_girder_per_m in the form -- the cross-
+# section and the workbook unit-weight default are consistent.
 CROSS_SECTION = [
-    (0.3125, 0.0000), (1.0375, 0.0000),
-    (1.0375, 0.2000), (0.8000, 0.4000),
-    (0.8000, 1.7000), (0.8750, 1.8500),
-    (1.3500, 1.8500), (1.3500, 2.0000),
-    (0.0000, 2.0000), (0.0000, 1.8500),
-    (0.4750, 1.8500), (0.5500, 1.7000),
-    (0.5500, 0.4000), (0.3125, 0.2000),
+    (0.1875, 0.0000),  # bottom-left of bottom flange
+    (0.8625, 0.0000),  # bottom-right of bottom flange
+    (0.8625, 1.7100),  # top-right of web (= base of right haunch)
+    (1.0500, 1.8500),  # bottom-right of top flange (= top of right haunch)
+    (1.0500, 2.0000),  # top-right of top flange
+    (0.0000, 2.0000),  # top-left of top flange
+    (0.0000, 1.8500),  # bottom-left of top flange (= top of left haunch)
+    (0.1875, 1.7100),  # top-left of web (= base of left haunch)
 ]
 
 
