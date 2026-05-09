@@ -36,12 +36,15 @@ Workbook formulas, reproduced verbatim from girder_overturning_check.py:
 
 from __future__ import annotations
 
+import base64
+import io
 import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter import font as tkfont
 
 import matplotlib
 from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 matplotlib.rcParams["font.family"] = "sans-serif"
@@ -72,13 +75,36 @@ DEFAULTS = {
     "SF_required":     "2.00",
 }
 
+# Each row: (key, mathtext-label, plain-text help, unit)
 FIELD_LABELS = [
-    ("L_left",          "L_left",            "back-span length over pin",     "m"),
-    ("L_total",         "L_total",           "girder + nose total",           "m"),
-    ("w_girder_per_m",  "w_girder_per_m",    "self-weight per metre",         "kN/m"),
-    ("W_LN",            "W_LN",              "launching-nose weight",         "kN"),
-    ("arm_LN_from_end", "arm_LN_from_end",   "nose centroid (L_LN / 3)",      "m"),
-    ("SF_required",     "SF_required",       "required safety factor",        "-"),
+    ("L_left",          r"$L_\mathrm{left}$",       "back-span length over pin", "m"),
+    ("L_total",         r"$L_\mathrm{total}$",      "girder + nose total",       "m"),
+    ("w_girder_per_m",  r"$w_\mathrm{girder}$",     "self-weight per metre",     "kN/m"),
+    ("W_LN",            r"$W_\mathrm{LN}$",         "launching-nose weight",     "kN"),
+    ("arm_LN_from_end", r"$a_\mathrm{LN,end}$",     "nose centroid ($L_{LN}/3$)","m"),
+    ("SF_required",     r"$\mathrm{SF}_\mathrm{req}$", "required safety factor", "-"),
+]
+
+# Mathtext expressions used in figure annotations and the formulas card.
+MATH = {
+    "L_left":   r"$L_\mathrm{left}$",
+    "L_right":  r"$L_\mathrm{right}$",
+    "L_total":  r"$L_\mathrm{total}$",
+    "W_left":   r"$W_\mathrm{left}$",
+    "W_right":  r"$W_\mathrm{right}$",
+    "W_LN":     r"$W_\mathrm{LN}$",
+    "arm_LN":   r"$a_\mathrm{LN}$",
+    "M_stab":   r"$M_\mathrm{stab}$",
+    "M_over":   r"$M_\mathrm{over}$",
+    "SF":       r"$\mathrm{SF}$",
+    "SF_req":   r"$\mathrm{SF}_\mathrm{req}$",
+}
+
+FORMULAS = [
+    r"$M_\mathrm{stab} = W_\mathrm{left}\,L_\mathrm{left}/2$",
+    r"$M_\mathrm{over} = W_\mathrm{right}\,L_\mathrm{right}/2 + W_\mathrm{LN}\,a_\mathrm{LN}$",
+    r"$\mathrm{SF} = M_\mathrm{stab}/M_\mathrm{over}$",
+    r"$\mathrm{deficit} = M_\mathrm{over}\cdot\mathrm{SF}_\mathrm{req} - M_\mathrm{stab}$",
 ]
 
 # Palette
@@ -170,11 +196,11 @@ def draw_schematic(ax, L_left, r):
                             mutation_scale=18),
         )
         ax.text(x, h + 0.18, f"{label}\n{w:,.1f} kN",
-                ha="center", va="bottom", fontsize=9, color=color)
+                ha="center", va="bottom", fontsize=10, color=color)
 
-    arrow(-arm_left, W_left,  C_STAB, "W_left")
-    arrow(arm_right, W_right, C_OVER, "W_right")
-    arrow(arm_LN,    W_LN,    C_OVER, "W_LN")
+    arrow(-arm_left, W_left,  C_STAB, MATH["W_left"])
+    arrow(arm_right, W_right, C_OVER, MATH["W_right"])
+    arrow(arm_LN,    W_LN,    C_OVER, MATH["W_LN"])
 
     # Lever-arm dimensions below the beam — stacked rows so labels don't collide
     def dim(x1, x2, y, label, color=C_DIM):
@@ -183,9 +209,9 @@ def draw_schematic(ax, L_left, r):
         ax.text((x1 + x2) / 2, y - 0.22, label,
                 ha="center", va="top", fontsize=8.5, color=C_TXT)
 
-    dim(left_end, pin,        -1.55, f"L_left = {L_left:.2f} m",   C_STAB)
-    dim(pin,      right_end,  -1.55, f"L_right = {L_right:.2f} m", C_OVER)
-    dim(pin,      arm_LN,     -2.30, f"arm_LN = {arm_LN:.2f} m",   C_DIM)
+    dim(left_end, pin,        -1.55, f"{MATH['L_left']} = {L_left:.2f} m",   C_STAB)
+    dim(pin,      right_end,  -1.55, f"{MATH['L_right']} = {L_right:.2f} m", C_OVER)
+    dim(pin,      arm_LN,     -2.30, f"{MATH['arm_LN']} = {arm_LN:.2f} m",   C_DIM)
 
     ax.set_xlim(left_end - 1.5, far)
     ax.set_ylim(-3.2, arr_max + 1.4)
@@ -206,8 +232,9 @@ def draw_moments(ax, r):
     SF_req = r["SF_required"]
     M_req  = M_over * SF_req
 
-    cats   = ["Stabilizing\n(W_left)", "Overturning\n(W_right + W_LN)",
-              f"Required\n(M_over × {SF_req:.2f})"]
+    cats   = [f"Stabilizing\n({MATH['W_left']})",
+              f"Overturning\n({MATH['W_right']} + {MATH['W_LN']})",
+              f"Required\n({MATH['M_over']}$\\cdot${SF_req:.2f})"]
     vals   = [M_stab, M_over, M_req]
     colors = [C_STAB, C_OVER, C_REQ]
 
@@ -222,11 +249,11 @@ def draw_moments(ax, r):
 
     passed = SF >= SF_req
     status_color = C_STAB if passed else C_OVER
-    ax.set_ylabel("Moment  (kN-m)", fontsize=9, color=C_TXT)
+    ax.set_ylabel(r"Moment, $M$  (kN$\cdot$m)", fontsize=10, color=C_TXT)
     ax.set_title(
-        f"SF = {SF:.3f}   {'PASS' if passed else 'FAIL'}   "
+        f"{MATH['SF']} = {SF:.3f}   {'PASS' if passed else 'FAIL'}   "
         f"(required {SF_req:.2f})",
-        fontsize=11, color=status_color, fontweight="bold", pad=10,
+        fontsize=12, color=status_color, fontweight="bold", pad=10,
     )
     ax.tick_params(colors=C_TXT, labelsize=9)
     for spine in ("top", "right"):
@@ -245,11 +272,33 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Girder Overturning Check")
-        self.minsize(1100, 720)
-        self.geometry("1240x780")
+        self.minsize(1100, 760)
+        self.geometry("1280x820")
+        self._tex_cache: dict[tuple, tk.PhotoImage] = {}
         self._apply_theme()
         self._build()
         self._calculate()
+
+    # Render a mathtext expression to a transparent PNG and wrap it as a
+    # PhotoImage. Cached because PhotoImage instances must be kept alive
+    # by something Python-side or Tk garbage-collects them.
+    def _tex_image(self, expr: str, fontsize: int = 12,
+                   color: str = C_TXT) -> tk.PhotoImage:
+        key = (expr, fontsize, color)
+        if key in self._tex_cache:
+            return self._tex_cache[key]
+        fig = Figure(figsize=(2, 0.5), dpi=120)
+        fig.patch.set_alpha(0)
+        fig.text(0, 0, expr, fontsize=fontsize, color=color,
+                 ha="left", va="bottom")
+        FigureCanvasAgg(fig)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", transparent=True,
+                    bbox_inches="tight", pad_inches=0.04)
+        data = base64.b64encode(buf.getvalue()).decode("ascii")
+        img = tk.PhotoImage(data=data)
+        self._tex_cache[key] = img
+        return img
 
     def _apply_theme(self):
         # Default font — Segoe UI Variable on Win 11, Segoe UI elsewhere.
@@ -319,21 +368,32 @@ class App(tk.Tk):
         inputs = ttk.LabelFrame(left, text="  Inputs  ", padding=14)
         inputs.pack(fill="x")
         self.entries: dict[str, ttk.Entry] = {}
-        for i, (key, name, helptxt, unit) in enumerate(FIELD_LABELS):
-            ttk.Label(inputs, text=name, style="FieldName.TLabel").grid(
-                row=i * 2, column=0, sticky="w", padx=(0, 12), pady=(6, 0)
-            )
+        for i, (key, math_label, helptxt, unit) in enumerate(FIELD_LABELS):
+            img = self._tex_image(math_label, fontsize=13)
+            lbl = ttk.Label(inputs, image=img, background=C_BG)
+            lbl.image = img  # keep ref
+            lbl.grid(row=i * 2, column=0, sticky="w", padx=(0, 12),
+                     pady=(8, 0))
             e = ttk.Entry(inputs, width=12, justify="right")
             e.insert(0, DEFAULTS[key])
-            e.grid(row=i * 2, column=1, sticky="ew", pady=(6, 0))
+            e.grid(row=i * 2, column=1, sticky="ew", pady=(8, 0))
             e.bind("<Return>", lambda _e: self._calculate())
             ttk.Label(inputs, text=unit, style="FieldHelp.TLabel").grid(
-                row=i * 2, column=2, sticky="w", padx=(8, 0), pady=(6, 0)
+                row=i * 2, column=2, sticky="w", padx=(8, 0), pady=(8, 0)
             )
-            ttk.Label(inputs, text=helptxt, style="FieldHelp.TLabel").grid(
-                row=i * 2 + 1, column=0, columnspan=3,
-                sticky="w", pady=(0, 2),
-            )
+            if "$" in helptxt:
+                # Render mathtext-bearing help lines so $L_{LN}/3$ etc. look right
+                himg = self._tex_image(helptxt, fontsize=10, color=C_DIM)
+                hlbl = ttk.Label(inputs, image=himg, background=C_BG)
+                hlbl.image = himg
+                hlbl.grid(row=i * 2 + 1, column=0, columnspan=3,
+                          sticky="w", pady=(0, 4))
+            else:
+                ttk.Label(inputs, text=helptxt,
+                          style="FieldHelp.TLabel").grid(
+                    row=i * 2 + 1, column=0, columnspan=3,
+                    sticky="w", pady=(0, 4),
+                )
             self.entries[key] = e
         inputs.columnconfigure(1, weight=1)
 
@@ -345,6 +405,15 @@ class App(tk.Tk):
                                                  ipadx=8, ipady=2)
         ttk.Button(btns, text="Reset defaults",
                    command=self._reset).pack(side="left")
+
+        # Formulas card — equations rendered as math
+        formulas = ttk.LabelFrame(left, text="  Formulas  ", padding=12)
+        formulas.pack(fill="x", pady=(0, 12))
+        for expr in FORMULAS:
+            fimg = self._tex_image(expr, fontsize=12)
+            fl = ttk.Label(formulas, image=fimg, background=C_BG)
+            fl.image = fimg
+            fl.pack(anchor="w", pady=2)
 
         # Status banner
         self.status_var = tk.StringVar(value="")
