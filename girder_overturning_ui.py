@@ -367,12 +367,14 @@ def draw_result(fig, L_left, r, bg_color):
 
 
 def draw_overhang_curves(fig, p, r):
-    """Two stacked panels swept over the right-side overhang L_right.
-    Top: M_over, M_stab, and the required capacity (M_over * SF_req).
+    """Three stacked panels swept over the right-side overhang L_right.
+    Top:    M_over, M_stab, and the required capacity (M_over * SF_req).
+    Middle: SF (overturning factor) = M_stab / M_over.
     Bottom: required counterweight in kN for two placements — at the
-    middle of the back span (arm = L_left/2) and at the far rear end
-    of the back span (arm = L_left). The current operating point is
-    marked on both panels with a vertical line and dots."""
+            middle of the back span (arm = L_left/2) and at the far rear
+            end of the back span (arm = L_left).
+    The current operating point is marked on every panel with a vertical
+    line and dots."""
     import numpy as np
     fig.clf()
     fig.set_facecolor(C_BG)
@@ -395,6 +397,10 @@ def draw_overhang_curves(fig, p, r):
                   + W_LN * (L_rights + arm_LN_from_end))
     M_req_arr  = M_over_arr * SF_req
 
+    SF_arr = np.where(M_over_arr > 0, M_stab_arr / M_over_arr, np.inf)
+    sf_cap = max(3.0 * SF_req, 5.0)
+    SF_clip = np.minimum(SF_arr, sf_cap)
+
     deficit_arr = np.maximum(M_req_arr - M_stab_arr, 0.0)
     arm_mid     = L_lefts / 2.0
     W_cw_mid_arr = deficit_arr / np.maximum(arm_mid, 0.01)
@@ -406,9 +412,10 @@ def draw_overhang_curves(fig, p, r):
     W_cw_mid_clip = np.minimum(W_cw_mid_arr, y_cap)
     W_cw_end_clip = np.minimum(W_cw_end_arr, y_cap)
 
-    gs  = fig.add_gridspec(2, 1, hspace=0.55, height_ratios=[1, 1])
-    ax1 = fig.add_subplot(gs[0])
-    ax2 = fig.add_subplot(gs[1])
+    gs    = fig.add_gridspec(3, 1, hspace=0.55, height_ratios=[1, 1, 1])
+    ax1   = fig.add_subplot(gs[0])
+    ax_sf = fig.add_subplot(gs[1])
+    ax2   = fig.add_subplot(gs[2])
 
     # ---- Top: moments vs L_right ---------------------------------------
     ax1.set_facecolor(C_BG)
@@ -434,6 +441,31 @@ def draw_overhang_curves(fig, p, r):
     ax1.grid(axis="y", alpha=0.25)
     for s in ("top", "right"):
         ax1.spines[s].set_visible(False)
+
+    # ---- Middle: overturning factor SF vs L_right ----------------------
+    C_SF = "#0891b2"
+    ax_sf.set_facecolor(C_BG)
+    ax_sf.plot(L_rights, SF_clip, color=C_SF, lw=2.0,
+               label=r"$\mathrm{SF} = M_\mathrm{stab}/M_\mathrm{over}$")
+    ax_sf.axhline(SF_req, color=C_REQ, lw=1.5, linestyle=(0, (5, 3)),
+                  label=fr"required: $\mathrm{{SF}}_\mathrm{{req}}$ = {SF_req:.2f}")
+    ax_sf.axhline(1.0, color=C_OVER, lw=1.0, linestyle=":", alpha=0.7,
+                  label=r"tipping ($\mathrm{SF}=1$)")
+    ax_sf.axvline(cur_L_right, color=C_DIM, lw=1, linestyle=":")
+    if r["SF"] <= sf_cap:
+        ax_sf.scatter([cur_L_right], [r["SF"]], color=C_SF, s=42, zorder=5)
+
+    ax_sf.set_xlabel(r"Right overhang  $L_\mathrm{right}$  (m)",
+                     fontsize=10, color=C_TXT)
+    ax_sf.set_ylabel(r"Overturning factor  $\mathrm{SF}$",
+                     fontsize=10, color=C_TXT)
+    ax_sf.set_xlim(0, L_total)
+    ax_sf.set_ylim(0, sf_cap * 1.05)
+    ax_sf.legend(loc="upper right", fontsize=8.5, frameon=False)
+    ax_sf.tick_params(colors=C_TXT, labelsize=9)
+    ax_sf.grid(axis="y", alpha=0.25)
+    for s in ("top", "right"):
+        ax_sf.spines[s].set_visible(False)
 
     # ---- Bottom: required counterweight vs L_right ---------------------
     C_CW_MID = "#1d4ed8"
@@ -661,10 +693,11 @@ class App(tk.Tk):
         self.canvas_schem.get_tk_widget().grid(row=0, column=0, sticky="nsew",
                                                pady=(0, 8))
 
-        # Moments + required counterweight, both as functions of right overhang
-        self.fig_curves = Figure(figsize=(7.4, 5.4), dpi=100, facecolor=C_BG)
+        # Moments + overturning factor + required counterweight, all as
+        # functions of the right-side overhang L_right
+        self.fig_curves = Figure(figsize=(7.4, 7.8), dpi=100, facecolor=C_BG)
         self.fig_curves.subplots_adjust(left=0.11, right=0.97,
-                                        top=0.96, bottom=0.08)
+                                        top=0.97, bottom=0.06)
         self.canvas_curves = FigureCanvasTkAgg(self.fig_curves, master=right)
         self.canvas_curves.get_tk_widget().grid(row=1, column=0, sticky="nsew")
 

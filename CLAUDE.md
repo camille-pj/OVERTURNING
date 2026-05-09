@@ -16,9 +16,10 @@ launching nose (right of pin) try to tip it over.
   derived from the workbook example in the README; edit & click Calculate.
   Two embedded matplotlib figures: free-body schematic (beam, pivot wedge,
   scaled load arrows, lever-arm dimensions, cross-section panel) and a
-  two-panel curves figure swept over right overhang L_right (top: M_over /
-  M_stab / required-capacity vs L_right; bottom: required counterweight in
-  kN vs L_right, one curve for back-span middle and one for back-span end).
+  three-panel curves figure swept over right overhang L_right
+  (top: M_over / M_stab / required-capacity; middle: overturning factor
+  SF with required-SF and tipping-SF threshold lines; bottom: required
+  counterweight in kN, one curve for back-span middle and one for end).
   Variables are rendered as mathtext throughout (form labels, formulas
   card, figure annotations, numeric result panel). Theme is Sun Valley (Win 11 fluent) when
   `sv_ttk` is installed, else `clam`.
